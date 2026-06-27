@@ -24,7 +24,7 @@ func fetchContainerInfo() tea.Cmd {
 			info.ID = "Unknown"
 		}
 
-		cli, err := client.New(client.FromEnv, client.WithAPIVersionNegotiation())
+		cli, err := client.New(client.FromEnv)
 		if err == nil {
 			defer cli.Close()
 			inspect, err := cli.ContainerInspect(context.Background(), info.ID, client.ContainerInspectOptions{})

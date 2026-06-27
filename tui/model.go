@@ -7,12 +7,13 @@ import (
 )
 
 type Model struct {
-	Viewport viewport.Model
-	Term     string
-	Width    int
-	Height   int
-	cInfo    ContainerInfo
-	err      error
+	Viewport   viewport.Model
+	Term       string
+	Width      int
+	Height     int
+	cInfo      ContainerInfo
+	err        error
+	ClientType string
 }
 
 func (m Model) Init() tea.Cmd {

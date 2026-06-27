@@ -46,7 +46,6 @@ const htmlClient = `<!DOCTYPE html>
   <body>
     <div id="terminal"></div>
     <script>
-      // FIX: Added convertEol: true to prevent the staircase/cascading text effect
       const term = new Terminal({ 
         cursorBlink: true, 
         convertEol: true, 
@@ -69,12 +68,11 @@ const htmlClient = `<!DOCTYPE html>
   </body>
 </html>`
 
-// Upgrader configuration for Gorilla Websockets
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  1024,
 	WriteBufferSize: 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		return true // Adjust security settings for production
+		return true
 	},
 }
 
@@ -171,10 +169,11 @@ func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	vp := viewport.New(pty.Window.Width, pty.Window.Height)
 
 	m := tui.Model{
-		Viewport: vp,
-		Term:     pty.Term,
-		Width:    pty.Window.Width,
-		Height:   pty.Window.Height,
+		Viewport:   vp,
+		Term:       pty.Term,
+		Width:      pty.Window.Width,
+		Height:     pty.Window.Height,
+		ClientType: "ssh",
 	}
 
 	return m, nil
@@ -194,10 +193,11 @@ func wsHandler(w http.ResponseWriter, r *http.Request) {
 	vp := viewport.New(width, height)
 
 	m := tui.Model{
-		Viewport: vp,
-		Term:     "xterm-web",
-		Width:    width,
-		Height:   height,
+		Viewport:   vp,
+		Term:       "xterm-web",
+		Width:      width,
+		Height:     height,
+		ClientType: "web",
 	}
 
 	p := tea.NewProgram(
