@@ -4,10 +4,13 @@ import tea "charm.land/bubbletea/v2"
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
+
+	case ContainerInfo:
+		m.cInfo = msg
+		return m, nil
 	case tea.WindowSizeMsg:
 		m.Height = msg.Height
 		m.Width = msg.Width
-	// KeyMsg is now KeyPressMsg in v2
 	case tea.KeyPressMsg:
 		switch msg.String() {
 		case "q", "ctrl+c":
