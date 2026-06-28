@@ -15,6 +15,10 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "ctrl+c":
 			return m, tea.Quit
+		case "r":
+			if m.cInfo.Client != nil {
+				return m, restartContainer(m.cInfo.Client, m.cInfo.ID)
+			}
 		}
 	}
 	return m, nil

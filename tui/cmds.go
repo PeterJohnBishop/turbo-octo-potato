@@ -34,9 +34,24 @@ func fetchContainerInfo() tea.Cmd {
 			} else {
 				info.Name = "Unknown (Requires Docker Socket mount)"
 				info.Image = "Unknown"
+				info.Client = cli
 			}
 		}
 
 		return info
+	}
+}
+
+func restartContainer(cli *client.Client, containerID string) tea.Cmd {
+	return func() tea.Msg {
+		// can pass a custom timeout value
+		options := client.ContainerRestartOptions{}
+
+		_, err := cli.ContainerRestart(context.Background(), containerID, options)
+		if err != nil {
+			return errMsg{err} // Return an error message to handle in your Update loop
+		}
+
+		return successMsg{"Container restarted successfully"}
 	}
 }
