@@ -5,6 +5,7 @@ docker build -t server-ssh .
 run:
 docker run -d \
   -p 2222:2222 \
+  -p 8080:8080 \
   -v /var/run/docker.sock:/var/run/docker.sock \
   --name server-ssh \
   server-ssh

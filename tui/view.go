@@ -7,7 +7,6 @@ import (
 )
 
 func (m Model) View() tea.View {
-
 	var content string
 
 	if m.ClientType == "ssh" {
@@ -19,7 +18,8 @@ func (m Model) View() tea.View {
 				"  Engine Host OS:  %s\n"+
 				"  Allocated CPUs:  %d\n"+
 				"  Go Version:      %s\n\n"+
-				"  [Press 'q' or 'ctrl+c' to close the terminal session] [Press 'r' to restart this container]",
+				"  [Press 'q' or 'ctrl+c' to close the terminal session]\n"+
+				"  [Press 'r' to restart this container]",
 			m.cInfo.ID, m.cInfo.Name, m.cInfo.Image, m.cInfo.OS, m.cInfo.NumCPU, m.cInfo.GoVersion,
 		)
 	} else {
@@ -31,7 +31,8 @@ func (m Model) View() tea.View {
 				"  Engine Host OS:  %s\n"+
 				"  Allocated CPUs:  %d\n"+
 				"  Go Version:      %s\n\n"+
-				"  [Press 'q' or 'ctrl+c' to close the terminal session] [Press 'r' to restart this container]",
+				"  [Press 'q' or 'ctrl+c' to close the terminal session]\n"+
+				"  [Press 'r' to restart this container]",
 			m.cInfo.ID, m.cInfo.Name, m.cInfo.Image, m.cInfo.OS, m.cInfo.NumCPU, m.cInfo.GoVersion,
 		)
 	}
