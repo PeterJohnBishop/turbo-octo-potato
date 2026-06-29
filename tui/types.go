@@ -16,6 +16,4 @@ type errMsg struct {
 	err error
 }
 
-type successMsg struct {
-	message string
-}
+type successMsg string

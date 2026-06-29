@@ -9,7 +9,7 @@ import (
 	"github.com/moby/moby/client"
 )
 
-func fetchContainerInfo() tea.Cmd {
+func fetchContainerInfo(cli *client.Client) tea.Cmd {
 	return func() tea.Msg {
 		info := ContainerInfo{
 			OS:        runtime.GOOS,
@@ -24,18 +24,18 @@ func fetchContainerInfo() tea.Cmd {
 			info.ID = "Unknown"
 		}
 
-		cli, err := client.New(client.FromEnv)
-		if err == nil {
-			defer cli.Close()
+		if cli != nil {
 			inspect, err := cli.ContainerInspect(context.Background(), info.ID, client.ContainerInspectOptions{})
 			if err == nil {
 				info.Name = inspect.Container.Name
 				info.Image = inspect.Container.Config.Image
 			} else {
-				info.Name = "Unknown (Requires Docker Socket mount)"
+				info.Name = "Unknown (Missing Socket Mount)"
 				info.Image = "Unknown"
-				info.Client = cli
 			}
+		} else {
+			info.Name = "Client Connection Uninitialized"
+			info.Image = "Unknown"
 		}
 
 		return info
@@ -52,6 +52,6 @@ func restartContainer(cli *client.Client, containerID string) tea.Cmd {
 			return errMsg{err} // Return an error message to handle in your Update loop
 		}
 
-		return successMsg{"Container restarted successfully"}
+		return successMsg("Container restarted successfully")
 	}
 }

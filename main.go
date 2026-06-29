@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync"
 	"syscall"
 	"time"
 
@@ -21,6 +22,7 @@ import (
 	"github.com/charmbracelet/ssh"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
+	"github.com/moby/moby/client"
 	"github.com/peterjohnbishop/turbo-octo-potato/tui"
 )
 
@@ -30,40 +32,105 @@ const (
 	host     = "0.0.0.0"
 )
 
+// Embedded premium web frontend client
 const htmlClient = `<!DOCTYPE html>
 <html>
   <head>
-    <title>Turbo-Octo-Potato Web Gateway</title>
+    <title>Internal Container Admin</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/xterm@5.3.0/css/xterm.css" />
     <script src="https://cdn.jsdelivr.net/npm/xterm@5.3.0/lib/xterm.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/xterm-addon-attach@0.9.0/lib/xterm-addon-attach.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/xterm-addon-fit@0.8.0/lib/xterm-addon-fit.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
     <style>
-      body { background: #000; margin: 0; padding: 20px; height: 100vh; box-sizing: border-box; }
-      #terminal { width: 100%; height: 100%; }
+      body {
+        background: #000000;
+        margin: 0;
+        padding: 0;
+        height: 100vh;
+        width: 100vw;
+        display: flex;
+        overflow: hidden;
+      }
+      .terminal-container {
+        flex: 1;
+        width: 100%;
+        height: 100%;
+        background-color: #000000;
+      }
+      #terminal {
+        width: 100%;
+        height: 100%;
+        padding: 16px;
+        box-sizing: border-box;
+        background-color: #000000;
+      }
     </style>
   </head>
   <body>
-    <div id="terminal"></div>
+    <div class="terminal-container">
+      <div id="terminal"></div>
+    </div>
     <script>
-      const term = new Terminal({ 
-        cursorBlink: true, 
-        convertEol: true, 
-        theme: { background: '#000000' } 
+      const term = new Terminal({
+        cursorBlink: true,
+        convertEol: true, // Fixes the staircase effect
+        fontFamily: 'JetBrains Mono, Courier New, monospace',
+        fontSize: 14,
+        theme: {
+          background: '#000000',
+          foreground: '#f3f4f6',
+          cursor: '#818cf8',
+        }
       });
-      
       const fitAddon = new FitAddon.FitAddon();
       term.loadAddon(fitAddon);
       term.open(document.getElementById('terminal'));
       fitAddon.fit();
 
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const ws = new WebSocket(protocol + '//' + window.location.host + '/ws');
+      const wsUrl = protocol + '//' + window.location.host + '/ws';
       
-      const attachAddon = new AttachAddon.AttachAddon(ws);
-      term.loadAddon(attachAddon);
+      let ws;
+      let reconnectDelay = 1000;
+      const maxReconnectDelay = 5000;
 
-      window.addEventListener('resize', () => fitAddon.fit());
+      function connect() {
+        ws = new WebSocket(wsUrl);
+        ws.binaryType = 'arraybuffer';
+
+        ws.onopen = () => {
+          reconnectDelay = 1000;
+          term.clear();
+        };
+
+        ws.onclose = () => {
+          setTimeout(() => {
+            connect();
+          }, reconnectDelay);
+          reconnectDelay = Math.min(reconnectDelay * 1.5, maxReconnectDelay);
+        };
+
+        ws.onerror = (err) => {
+          console.error("WebSocket session errored out: ", err);
+          ws.close();
+        };
+
+        ws.onmessage = (event) => {
+          term.write(new Uint8Array(event.data));
+        };
+      }
+
+      term.onData(data => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(data);
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        fitAddon.fit();
+      });
+
+      connect();
     </script>
   </body>
 </html>`
@@ -79,25 +146,37 @@ var upgrader = websocket.Upgrader{
 type wsWrapper struct {
 	conn *websocket.Conn
 	r    io.Reader
+	mu   sync.Mutex // Mutex lock prevents multi-threaded WebSocket write crashes
 }
 
 func (w *wsWrapper) Read(p []byte) (int, error) {
-	if w.r == nil {
-		_, r, err := w.conn.NextReader()
-		if err != nil {
-			return 0, err
+	for {
+		if w.r == nil {
+			messageType, r, err := w.conn.NextReader()
+			if err != nil {
+				return 0, err
+			}
+			if messageType == websocket.TextMessage || messageType == websocket.BinaryMessage {
+				w.r = r
+			} else {
+				continue
+			}
 		}
-		w.r = r
+		n, err := w.r.Read(p)
+		if err == io.EOF {
+			w.r = nil
+			if n > 0 {
+				return n, nil
+			}
+			continue
+		}
+		return n, err
 	}
-	n, err := w.r.Read(p)
-	if err == io.EOF {
-		w.r = nil
-		return n, nil
-	}
-	return n, err
 }
 
 func (w *wsWrapper) Write(p []byte) (int, error) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
 	err := w.conn.WriteMessage(websocket.BinaryMessage, p)
 	if err != nil {
 		return 0, err
@@ -106,7 +185,7 @@ func (w *wsWrapper) Write(p []byte) (int, error) {
 }
 
 func main() {
-	// Wish
+	// Wish SSH Initialization
 	s, err := wish.NewServer(
 		wish.WithAddress(net.JoinHostPort(host, sshPort)),
 		wish.WithHostKeyPath(".ssh/id_ed25519"),
@@ -121,7 +200,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// GIN
+	// GIN Routing Initialization
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.Default()
 
@@ -162,54 +241,69 @@ func main() {
 func teaHandler(s ssh.Session) (tea.Model, []tea.ProgramOption) {
 	pty, _, active := s.Pty()
 	if !active {
-		fmt.Println("No active terminal, skipping")
 		return nil, nil
 	}
 
-	vp := viewport.New(pty.Window.Width, pty.Window.Height)
-
-	m := tui.Model{
-		Viewport:   vp,
-		Term:       pty.Term,
-		Width:      pty.Window.Width,
-		Height:     pty.Window.Height,
-		ClientType: "ssh",
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		fmt.Printf("SSH Docker SDK initialization failed: %v\n", err)
 	}
 
+	m := tui.Model{
+		Term:      pty.Term,
+		Width:     pty.Window.Width,
+		Height:    pty.Window.Height,
+		DockerCli: cli,
+		Status:    "Active Session Opened",
+	}
 	return m, nil
 }
 
 func wsHandler(w http.ResponseWriter, r *http.Request) {
+	upgrader := websocket.Upgrader{
+		CheckOrigin: func(r *http.Request) bool { return true },
+	}
 	conn, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
-		fmt.Println("Websocket upgrade failed:", err)
 		return
 	}
 	defer conn.Close()
 
-	rw := &wsWrapper{conn: conn}
+	cli, err := client.New(client.FromEnv)
+	if err != nil {
+		fmt.Printf("WebSocket Docker SDK initialization failed: %v\n", err)
+	}
 
 	width, height := 80, 24
 	vp := viewport.New(width, height)
 
 	m := tui.Model{
-		Viewport:   vp,
-		Term:       "xterm-web",
-		Width:      width,
-		Height:     height,
-		ClientType: "web",
+		Viewport:  vp,
+		Term:      "xterm-web",
+		Width:     width,
+		Height:    height,
+		DockerCli: cli,
+		Status:    "Active Session Opened",
 	}
 
+	wrapper := &wsWrapper{conn: conn}
 	p := tea.NewProgram(
 		m,
-		tea.WithInput(rw),
-		tea.WithOutput(rw),
+		tea.WithInput(wrapper),
+		tea.WithOutput(wrapper),
 	)
 
+	// Inject a concurrent WindowSizeMsg to trigger the layout inside Bubble Tea
 	go func() {
 		time.Sleep(50 * time.Millisecond)
 		p.Send(tea.WindowSizeMsg{Width: width, Height: height})
 	}()
 
-	_, _ = p.Run()
+	if _, err := p.Run(); err != nil {
+		fmt.Printf("Runtime bubble tea canvas error: %v\n", err)
+	}
+
+	if cli != nil {
+		cli.Close()
+	}
 }
