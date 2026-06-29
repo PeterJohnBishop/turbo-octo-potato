@@ -46,7 +46,7 @@ func (m Model) View() tea.View {
 	}
 
 	content += "\n  [ KEYBOARD COMMANDS ]\n" +
-		"  • [r] Trigger Graceful Self-Restart\n" +
+		"  • [r] Restart Container\n" +
 		"  • [q] Exit & Drop Terminal Connection\n"
 
 	v := tea.NewView(content)
